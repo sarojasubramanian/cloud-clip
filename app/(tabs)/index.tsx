@@ -26,6 +26,7 @@ export default function Homepage() {
 		timestamp: Timestamp | null; // Use Date if you prefer Date objects
 	}
 
+	const lastSyncedRef = useRef<string>("");
 	const [saveTextData, setSaveTextData] = useState("");
 	const [clipboardEntries, setClipboardEntries] = useState<CustomClipboard[]>([]);
 	const [alertVisible, setAlertVisible] = useState(false);
@@ -94,13 +95,25 @@ export default function Homepage() {
 
 	const refresh = (clipboards: CustomClipboard[]) => {
 		setClipboardEntries(clipboards);
-		console.log(clipboards.length);
-		if (clipboards.length !== 0) {
-			const recent = clipboards[0]?.content;
-			setData({ content: recent, timestamp: Timestamp.now() });
-			setClipboard(recent, showAlert, "Copied to clipboard"); // Pass the showAlert function
-		}
-	}
+
+		if (clipboards.length === 0) return;
+
+		const recent = clipboards[0].content;
+		const fromDevice = clipboards[0].deviceId;
+
+		// Ignore updates coming from THIS device
+		if (fromDevice === deviceId) return;
+
+		// Update local clipboard because this is a remote update
+		setClipboard(recent, showAlert, "Copied to clipboard"); // Pass the showAlert function
+
+		// Mark it so polling doesn't re-upload it
+		prevDataRef.current = recent;
+		lastSyncedRef.current = recent;
+
+		setData({ content: recent, timestamp: Timestamp.now() });
+	};
+
 
 	const prevDataRef = useRef(data.content);
 
@@ -120,7 +133,11 @@ export default function Homepage() {
 						getClipboard()
 							.then(async (text) => {
 								text = text.trim();
-								if (text !== prevDataRef.current && text !== '') {
+								if (
+									text !== prevDataRef.current &&          // prevent loops
+									text !== lastSyncedRef.current &&        // ignore Firestore changes
+									text.trim() !== ""
+								){
 									console.log('you are here');
 									setData({ content: text, timestamp: Timestamp.now() });
 									setclipboardData({ content: text, timestamp: Timestamp.now() });
